@@ -21,9 +21,13 @@ public class InMemoryProductRepository : IProductRepository
     private readonly List<Product> _products = new();
     private int _nextId = 1;
     private readonly AsyncRetryPolicy _retryPolicy;
+    private readonly ICacheService _cacheService;
+    private const string CacheKeyPrefix = "product:";
+    private const string AllProductsCacheKey = "products:all";
 
-    public InMemoryProductRepository()
+    public InMemoryProductRepository(ICacheService cacheService)
     {
+        _cacheService = cacheService;
         _retryPolicy = Policy
             .Handle<Exception>()
             .WaitAndRetryAsync(
@@ -34,34 +38,53 @@ public class InMemoryProductRepository : IProductRepository
 
     public async Task<IEnumerable<Product>> GetAllAsync()
     {
-        return await _retryPolicy.ExecuteAsync(() => 
-            Task.FromResult<IEnumerable<Product>>(_products));
+        return await _retryPolicy.ExecuteAsync(async () =>
+        {
+            var cachedProducts = await _cacheService.GetAsync<List<Product>>(AllProductsCacheKey);
+            if (cachedProducts != null)
+                return cachedProducts;
+
+            var products = _products.ToList();
+            await _cacheService.SetAsync(AllProductsCacheKey, products, TimeSpan.FromMinutes(5));
+            return products;
+        });
     }
 
     public async Task<Product> GetByIdAsync(int id)
     {
-        return await _retryPolicy.ExecuteAsync(() =>
+        return await _retryPolicy.ExecuteAsync(async () =>
         {
+            var cacheKey = $"{CacheKeyPrefix}{id}";
+            var cachedProduct = await _cacheService.GetAsync<Product>(cacheKey);
+            if (cachedProduct != null)
+                return cachedProduct;
+
             var product = _products.FirstOrDefault(p => p.Id == id);
             if (product == null)
                 throw new NotFoundException($"Product with ID {id} not found");
-            return Task.FromResult(product);
+
+            await _cacheService.SetAsync(cacheKey, product, TimeSpan.FromMinutes(5));
+            return product;
         });
     }
 
     public async Task<Product> AddAsync(Product product)
     {
-        return await _retryPolicy.ExecuteAsync(() =>
+        return await _retryPolicy.ExecuteAsync(async () =>
         {
             product.Id = _nextId++;
             _products.Add(product);
-            return Task.FromResult(product);
+
+            await _cacheService.RemoveAsync(AllProductsCacheKey);
+            await _cacheService.SetAsync($"{CacheKeyPrefix}{product.Id}", product, TimeSpan.FromMinutes(5));
+
+            return product;
         });
     }
 
     public async Task<Product> UpdateAsync(int id, Product product)
     {
-        return await _retryPolicy.ExecuteAsync(() =>
+        return await _retryPolicy.ExecuteAsync(async () =>
         {
             var existing = _products.FirstOrDefault(p => p.Id == id);
             if (existing == null)
@@ -71,20 +94,28 @@ public class InMemoryProductRepository : IProductRepository
             existing.Description = product.Description;
             existing.Price = product.Price;
             existing.Stock = product.Stock;
-            return Task.FromResult(existing);
+
+            await _cacheService.RemoveAsync($"{CacheKeyPrefix}{id}");
+            await _cacheService.RemoveAsync(AllProductsCacheKey);
+
+            return existing;
         });
     }
 
     public async Task<bool> DeleteAsync(int id)
     {
-        return await _retryPolicy.ExecuteAsync(() =>
+        return await _retryPolicy.ExecuteAsync(async () =>
         {
             var product = _products.FirstOrDefault(p => p.Id == id);
             if (product == null)
                 throw new NotFoundException($"Product with ID {id} not found");
 
             _products.Remove(product);
-            return Task.FromResult(true);
+
+            await _cacheService.RemoveAsync($"{CacheKeyPrefix}{id}");
+            await _cacheService.RemoveAsync(AllProductsCacheKey);
+
+            return true;
         });
     }
 }

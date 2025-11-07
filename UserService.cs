@@ -10,9 +10,13 @@ public class UserService : IUserService
     private readonly List<User> _users = new();
     private int _nextId = 1;
     private readonly AsyncRetryPolicy _retryPolicy;
+    private readonly ICacheService _cacheService;
+    private const string CacheKeyPrefix = "user:";
+    private const string AllUsersCacheKey = "users:all";
 
-    public UserService()
+    public UserService(ICacheService cacheService)
     {
+        _cacheService = cacheService;
         _retryPolicy = Policy
             .Handle<Exception>()
             .WaitAndRetryAsync(
@@ -23,35 +27,54 @@ public class UserService : IUserService
 
     public async Task<IEnumerable<User>> GetAllUsersAsync()
     {
-        return await _retryPolicy.ExecuteAsync(() => 
-            Task.FromResult<IEnumerable<User>>(_users));
+        return await _retryPolicy.ExecuteAsync(async () =>
+        {
+            var cachedUsers = await _cacheService.GetAsync<List<User>>(AllUsersCacheKey);
+            if (cachedUsers != null)
+                return cachedUsers;
+
+            var users = _users.ToList();
+            await _cacheService.SetAsync(AllUsersCacheKey, users, TimeSpan.FromMinutes(5));
+            return users;
+        });
     }
 
     public async Task<User> GetUserByIdAsync(int id)
     {
-        return await _retryPolicy.ExecuteAsync(() =>
+        return await _retryPolicy.ExecuteAsync(async () =>
         {
+            var cacheKey = $"{CacheKeyPrefix}{id}";
+            var cachedUser = await _cacheService.GetAsync<User>(cacheKey);
+            if (cachedUser != null)
+                return cachedUser;
+
             var user = _users.FirstOrDefault(u => u.Id == id);
             if (user == null)
                 throw new NotFoundException($"User with ID {id} not found");
-            return Task.FromResult(user);
+
+            await _cacheService.SetAsync(cacheKey, user, TimeSpan.FromMinutes(5));
+            return user;
         });
     }
 
     public async Task<User> CreateUserAsync(User user)
     {
-        return await _retryPolicy.ExecuteAsync(() =>
+        return await _retryPolicy.ExecuteAsync(async () =>
         {
             user.Id = _nextId++;
             user.CreatedAt = DateTime.UtcNow;
             _users.Add(user);
-            return Task.FromResult(user);
+
+            await _cacheService.RemoveAsync(AllUsersCacheKey);
+            await _cacheService.SetAsync($"{CacheKeyPrefix}{user.Id}", user, TimeSpan.FromMinutes(5));
+
+            return user;
         });
     }
 
     public async Task<User> UpdateUserAsync(int id, User user)
     {
-        return await _retryPolicy.ExecuteAsync(() =>
+        return await _retryPolicy.ExecuteAsync(async () =>
         {
             var existingUser = _users.FirstOrDefault(u => u.Id == id);
             if (existingUser == null)
@@ -59,20 +82,28 @@ public class UserService : IUserService
 
             existingUser.Name = user.Name;
             existingUser.Email = user.Email;
-            return Task.FromResult(existingUser);
+
+            await _cacheService.RemoveAsync($"{CacheKeyPrefix}{id}");
+            await _cacheService.RemoveAsync(AllUsersCacheKey);
+
+            return existingUser;
         });
     }
 
     public async Task<bool> DeleteUserAsync(int id)
     {
-        return await _retryPolicy.ExecuteAsync(() =>
+        return await _retryPolicy.ExecuteAsync(async () =>
         {
             var user = _users.FirstOrDefault(u => u.Id == id);
             if (user == null)
                 throw new NotFoundException($"User with ID {id} not found");
 
             _users.Remove(user);
-            return Task.FromResult(true);
+
+            await _cacheService.RemoveAsync($"{CacheKeyPrefix}{id}");
+            await _cacheService.RemoveAsync(AllUsersCacheKey);
+
+            return true;
         });
     }
 }

@@ -6,9 +6,21 @@ using FluentValidation;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure Redis
+var redisConnectionString = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
+var redisInstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName") ?? "MinimalApiApp:";
+
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = redisConnectionString;
+    options.InstanceName = redisInstanceName;
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Register cache service
+builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 
 // Register repository
 builder.Services.AddSingleton<IProductRepository, InMemoryProductRepository>();
@@ -122,6 +134,33 @@ app.MapDelete("/api/products/{id}", async (int id, IProductService productServic
     return Results.NoContent();
 })
 .WithName("DeleteProduct")
+.WithOpenApi();
+
+// Redis health check endpoint
+app.MapGet("/api/health/redis", async (ICacheService cacheService) =>
+{
+    try
+    {
+        var testKey = "health_check";
+        var testValue = DateTime.UtcNow.ToString();
+        
+        await cacheService.SetAsync(testKey, testValue, TimeSpan.FromSeconds(10));
+        var retrieved = await cacheService.GetAsync<string>(testKey);
+        await cacheService.RemoveAsync(testKey);
+        
+        if (retrieved == testValue)
+        {
+            return Results.Ok(new { status = "healthy", message = "Redis is connected and working" });
+        }
+        
+        return Results.Problem("Redis health check failed - data mismatch");
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem($"Redis health check failed: {ex.Message}");
+    }
+})
+.WithName("RedisHealthCheck")
 .WithOpenApi();
 
 app.Run();
