@@ -23,8 +23,18 @@ public class ProductValidator : AbstractValidator<Product>
         });
 
         RuleFor(x => x.Name)
+            .NotNull()
+            .WithMessage("Product name cannot be null")
             .NotEmpty()
-            .WithMessage("Product name is required");
+            .WithMessage("Product name is required")
+            .MaximumLength(5)
+            .WithMessage("Product name must not exceed 5 characters");
+
+        RuleFor(x => x.Description)
+            .NotNull()
+            .WithMessage("Product description cannot be null")
+            .MaximumLength(10)
+            .WithMessage("Product description must not exceed 10 characters");
 
         RuleFor(x => x.Price)
             .GreaterThan(0)
