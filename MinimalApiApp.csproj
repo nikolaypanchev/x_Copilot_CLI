@@ -15,6 +15,10 @@
     <Content Remove="IntegrationTests\**" />
     <EmbeddedResource Remove="IntegrationTests\**" />
     <None Remove="IntegrationTests\**" />
+    <Compile Remove="UnitTests\**" />
+    <Content Remove="UnitTests\**" />
+    <EmbeddedResource Remove="UnitTests\**" />
+    <None Remove="UnitTests\**" />
   </ItemGroup>
 
   <ItemGroup>

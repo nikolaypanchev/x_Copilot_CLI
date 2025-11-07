@@ -19,12 +19,12 @@ public class ValidationMiddleware
     {
         if (context.Request.Method == HttpMethods.Post || context.Request.Method == HttpMethods.Put)
         {
-            if (context.Request.Path.StartsWithSegments("/api/products"))
+            if (context.Request.Path.Value?.Contains("/products", StringComparison.OrdinalIgnoreCase) == true)
             {
                 await ValidateRequest<Product>(context, serviceProvider);
                 if (context.Response.HasStarted) return;
             }
-            else if (context.Request.Path.StartsWithSegments("/api/users"))
+            else if (context.Request.Path.Value?.Contains("/users", StringComparison.OrdinalIgnoreCase) == true)
             {
                 await ValidateRequest<User>(context, serviceProvider);
                 if (context.Response.HasStarted) return;

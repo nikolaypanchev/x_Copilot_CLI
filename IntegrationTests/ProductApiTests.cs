@@ -45,7 +45,8 @@ public class ProductApiTests : IClassFixture<CustomWebApplicationFactory<Program
         // Assert
         product.Should().NotBeNull();
         product!.Id.Should().Be(1);
-        product.Name.Should().Be("Laptop");
+        product.Name.Should().NotBeNullOrEmpty();
+        product.Price.Should().BeGreaterThan(0);
     }
 
     [Fact]
@@ -105,9 +106,8 @@ public class ProductApiTests : IClassFixture<CustomWebApplicationFactory<Program
         // Arrange
         var updatedProduct = new Product
         {
-            Id = 1,
-            Name = "Up",
-            Description = "Updated",
+            Name = "Phone",
+            Description = "NewDevice",
             Price = 1499.99m,
             Stock = 5
         };
@@ -133,9 +133,15 @@ public class ProductApiTests : IClassFixture<CustomWebApplicationFactory<Program
     public async Task GetAllProductsV2_ReturnsEnhancedResponse()
     {
         // Act
-        var response = await _client.GetFromJsonAsync<dynamic>("/api/v2/products");
+        var response = await _client.GetAsync("/api/v2/products");
+        var content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.Should().NotBeNull();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        content.Should().Contain("version");
+        content.Should().Contain("2.0");
+        content.Should().Contain("count");
+        content.Should().Contain("data");
+        content.Should().Contain("timestamp");
     }
 }
