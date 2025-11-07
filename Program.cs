@@ -3,10 +3,12 @@ using MinimalApiApp.Services;
 using MinimalApiApp.Middleware;
 using MinimalApiApp.Validators;
 using MinimalApiApp.Configuration;
+using MinimalApiApp.Data;
 using FluentValidation;
 using Serilog;
 using Asp.Versioning;
 using Asp.Versioning.Builder;
+using Microsoft.EntityFrameworkCore;
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -23,6 +25,10 @@ try
 
     // Add Serilog
     builder.Host.UseSerilog();
+
+    // Configure Entity Framework Core with InMemory Database
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseInMemoryDatabase("MinimalApiDb"));
 
     // Configure API Versioning
     builder.Services.AddApiVersioning(options =>
@@ -59,20 +65,27 @@ try
     // Register cache service
     builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 
-    // Register repository
-    builder.Services.AddSingleton<IProductRepository, InMemoryProductRepository>();
-
-    builder.Services.AddSingleton<IUserService, UserService>();
-    builder.Services.AddSingleton<IProductService, ProductService>();
+    // Register EF Core repositories (use scoped for DbContext)
+    builder.Services.AddScoped<IProductRepository, EfProductRepository>();
+    builder.Services.AddScoped<IUserService, EfUserRepository>();
+    builder.Services.AddScoped<IProductService, ProductService>();
 
     // Register UnitOfWork which exposes the existing services
-    builder.Services.AddSingleton<IUnitOfWork, UnitOfWork>();
+    builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
     // Register FluentValidation
     builder.Services.AddScoped<IValidator<Product>, ProductValidator>();
     builder.Services.AddScoped<IValidator<User>, UserValidator>();
 
     var app = builder.Build();
+
+    // Ensure database is created and seeded
+    using (var scope = app.Services.CreateScope())
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Database.EnsureCreated();
+        Log.Information("Database initialized with seed data");
+    }
 
     if (app.Environment.IsDevelopment())
     {
@@ -349,6 +362,34 @@ try
     .MapToApiVersion(2, 0);
 
     // ===== HEALTH CHECK ENDPOINTS (Non-versioned) =====
+    
+    // Database health check endpoint
+    app.MapGet("/api/health/database", async (ApplicationDbContext dbContext) =>
+    {
+        try
+        {
+            // Try to query the database
+            var userCount = await dbContext.Users.CountAsync();
+            var productCount = await dbContext.Products.CountAsync();
+            
+            return Results.Ok(new 
+            { 
+                status = "healthy", 
+                message = "Database is connected and accessible",
+                statistics = new 
+                {
+                    users = userCount,
+                    products = productCount
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem($"Database health check failed: {ex.Message}");
+        }
+    })
+    .WithName("DatabaseHealthCheck")
+    .WithOpenApi();
     
     // Redis health check endpoint
     app.MapGet("/api/health/redis", async (ICacheService cacheService) =>
