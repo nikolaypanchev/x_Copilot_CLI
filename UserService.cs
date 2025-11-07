@@ -13,7 +13,7 @@ public class UserService : IUserService
         return Task.FromResult<IEnumerable<User>>(_users);
     }
 
-    public Task<User?> GetUserByIdAsync(int id)
+    public Task<User> GetUserByIdAsync(int id)
     {
         var user = _users.FirstOrDefault(u => u.Id == id);
         if (user == null)
@@ -29,7 +29,7 @@ public class UserService : IUserService
         return Task.FromResult(user);
     }
 
-    public Task<User?> UpdateUserAsync(int id, User user)
+    public Task<User> UpdateUserAsync(int id, User user)
     {
         var existingUser = _users.FirstOrDefault(u => u.Id == id);
         if (existingUser == null)
@@ -37,7 +37,7 @@ public class UserService : IUserService
 
         existingUser.Name = user.Name;
         existingUser.Email = user.Email;
-        return Task.FromResult<User?>(existingUser);
+        return Task.FromResult(existingUser);
     }
 
     public Task<bool> DeleteUserAsync(int id)

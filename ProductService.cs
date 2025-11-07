@@ -7,9 +7,9 @@ namespace MinimalApiApp.Services;
 public interface IProductRepository
 {
     Task<IEnumerable<Product>> GetAllAsync();
-    Task<Product?> GetByIdAsync(int id);
+    Task<Product> GetByIdAsync(int id);
     Task<Product> AddAsync(Product product);
-    Task<Product?> UpdateAsync(int id, Product product);
+    Task<Product> UpdateAsync(int id, Product product);
     Task<bool> DeleteAsync(int id);
 }
 
@@ -24,7 +24,7 @@ public class InMemoryProductRepository : IProductRepository
         return Task.FromResult<IEnumerable<Product>>(_products);
     }
 
-    public Task<Product?> GetByIdAsync(int id)
+    public Task<Product> GetByIdAsync(int id)
     {
         var product = _products.FirstOrDefault(p => p.Id == id);
         if (product == null)
@@ -39,7 +39,7 @@ public class InMemoryProductRepository : IProductRepository
         return Task.FromResult(product);
     }
 
-    public Task<Product?> UpdateAsync(int id, Product product)
+    public Task<Product> UpdateAsync(int id, Product product)
     {
         var existing = _products.FirstOrDefault(p => p.Id == id);
         if (existing == null)
@@ -49,7 +49,7 @@ public class InMemoryProductRepository : IProductRepository
         existing.Description = product.Description;
         existing.Price = product.Price;
         existing.Stock = product.Stock;
-        return Task.FromResult<Product?>(existing);
+        return Task.FromResult(existing);
     }
 
     public Task<bool> DeleteAsync(int id)
@@ -78,7 +78,7 @@ public class ProductService : IProductService
         return _unitOfWork.Products.GetAllAsync();
     }
 
-    public Task<Product?> GetProductByIdAsync(int id)
+    public Task<Product> GetProductByIdAsync(int id)
     {
         return _unitOfWork.Products.GetByIdAsync(id);
     }
@@ -90,11 +90,10 @@ public class ProductService : IProductService
         return created;
     }
 
-    public async Task<Product?> UpdateProductAsync(int id, Product product)
+    public async Task<Product> UpdateProductAsync(int id, Product product)
     {
         var updated = await _unitOfWork.Products.UpdateAsync(id, product);
-        if (updated != null)
-            await _unitOfWork.CommitAsync();
+        await _unitOfWork.CommitAsync();
         return updated;
     }
 
