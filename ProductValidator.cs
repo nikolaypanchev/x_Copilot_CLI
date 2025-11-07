@@ -27,8 +27,8 @@ public class ProductValidator : AbstractValidator<Product>
             .WithMessage("Product name is required");
 
         RuleFor(x => x.Price)
-            .GreaterThanOrEqualTo(0)
-            .WithMessage("Product price must be greater than or equal to 0");
+            .GreaterThan(0)
+            .WithMessage("Product price must be greater than 0");
 
         RuleFor(x => x.Stock)
             .GreaterThanOrEqualTo(0)
