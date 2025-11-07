@@ -9,6 +9,7 @@ using Serilog;
 using Asp.Versioning;
 using Asp.Versioning.Builder;
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -50,6 +51,20 @@ try
     // Configure Redis
     var redisConnectionString = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
     var redisInstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName") ?? "MinimalApiApp:";
+
+    // Register IConnectionMultiplexer for advanced Redis operations
+    try
+    {
+        var redisConnection = StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString);
+        builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(redisConnection);
+        Log.Information("Redis connection established successfully");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Could not connect to Redis. Cache operations will be limited.");
+        // Register null to allow graceful degradation
+        builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(provider => null!);
+    }
 
     builder.Services.AddStackExchangeRedisCache(options =>
     {

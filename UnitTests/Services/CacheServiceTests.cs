@@ -6,6 +6,7 @@ using Moq;
 using System.Text;
 using System.Text.Json;
 using Xunit;
+using StackExchange.Redis;
 
 namespace MinimalApiApp.UnitTests.Services;
 
@@ -187,7 +188,7 @@ public class CacheServiceTests
     }
 
     [Fact]
-    public async Task RemoveByPrefixAsync_ShouldLogWarning()
+    public async Task RemoveByPrefixAsync_WithNullConnection_ShouldLogWarning()
     {
         // Arrange
         var prefix = "test-prefix";
@@ -201,6 +202,67 @@ public class CacheServiceTests
                 LogLevel.Warning,
                 It.IsAny<EventId>(),
                 It.Is<It.IsAnyType>((v, t) => true),
+                It.IsAny<Exception>(),
+                It.Is<Func<It.IsAnyType, Exception?, string>>((v, t) => true)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RemoveByPrefixAsync_WithValidConnection_ShouldRemoveKeys()
+    {
+        // Arrange
+        var mockConnectionMultiplexer = new Mock<StackExchange.Redis.IConnectionMultiplexer>();
+        var mockDatabase = new Mock<StackExchange.Redis.IDatabase>();
+        var mockServer = new Mock<StackExchange.Redis.IServer>();
+        
+        var prefix = "test-prefix";
+        var keys = new[] 
+        { 
+            new StackExchange.Redis.RedisKey("test-prefix:key1"),
+            new StackExchange.Redis.RedisKey("test-prefix:key2")
+        };
+
+        mockConnectionMultiplexer.Setup(c => c.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+            .Returns(mockDatabase.Object);
+        
+        mockConnectionMultiplexer.Setup(c => c.GetEndPoints(It.IsAny<bool>()))
+            .Returns(new System.Net.EndPoint[] { new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 6379) });
+        
+        mockConnectionMultiplexer.Setup(c => c.GetServer(It.IsAny<System.Net.EndPoint>(), It.IsAny<object>()))
+            .Returns(mockServer.Object);
+
+        // Create async enumerable from array
+        async IAsyncEnumerable<StackExchange.Redis.RedisKey> GetKeysAsync()
+        {
+            foreach (var key in keys)
+            {
+                await Task.Yield();
+                yield return key;
+            }
+        }
+
+        mockServer.Setup(s => s.KeysAsync(It.IsAny<int>(), It.IsAny<StackExchange.Redis.RedisValue>(), It.IsAny<int>(), It.IsAny<long>(), It.IsAny<int>(), It.IsAny<StackExchange.Redis.CommandFlags>()))
+            .Returns(GetKeysAsync());
+
+        mockDatabase.Setup(d => d.KeyDeleteAsync(It.IsAny<StackExchange.Redis.RedisKey[]>(), It.IsAny<StackExchange.Redis.CommandFlags>()))
+            .ReturnsAsync(2);
+
+        var cacheService = new RedisCacheService(_mockCache.Object, _mockLogger.Object, mockConnectionMultiplexer.Object);
+
+        // Act
+        await cacheService.RemoveByPrefixAsync(prefix);
+
+        // Assert
+        mockDatabase.Verify(d => d.KeyDeleteAsync(
+            It.Is<StackExchange.Redis.RedisKey[]>(k => k.Length == 2),
+            It.IsAny<StackExchange.Redis.CommandFlags>()), 
+            Times.Once);
+        
+        _mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Removed")),
                 It.IsAny<Exception>(),
                 It.Is<Func<It.IsAnyType, Exception?, string>>((v, t) => true)),
             Times.Once);
