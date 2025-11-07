@@ -9,7 +9,8 @@ A production-ready C# .NET 8 Minimal API application with comprehensive features
 - ✅ **API Versioning** - Multiple API versions (v1, v2) using Asp.Versioning
 - ✅ **Entity Framework Core** - In-Memory database for development
 - ✅ **FluentValidation** - Request validation with custom middleware
-- ✅ **Redis Caching** - Distributed caching with StackExchange.Redis
+- ✅ **Direct Redis Caching** - Pure Redis implementation using StackExchange.Redis (no IDistributedCache wrapper)
+- ✅ **Cache Management API** - Full CRUD operations for cache entries with prefix-based removal
 - ✅ **Serilog Logging** - Structured logging to file and console
 - ✅ **Health Checks** - Database and Redis health endpoints
 - ✅ **Swagger/OpenAPI** - Interactive API documentation with versioning support
@@ -27,6 +28,7 @@ A production-ready C# .NET 8 Minimal API application with comprehensive features
 ```
 MinimalApiApp/
 ├── Models/                      # Domain entities
+│   ├── CacheEntry.cs
 │   ├── Product.cs
 │   └── User.cs
 ├── Services/                    # Business logic and interfaces
@@ -73,9 +75,25 @@ MinimalApiApp/
 
 ### Prerequisites
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [Redis](https://redis.io/download) (optional, for caching features)
+- [Redis](https://redis.io/download) - **Required** for caching (application will fail to start without Redis)
 
-### 1. Clone and Build
+### 1. Start Redis
+
+```bash
+# Windows (if installed)
+redis-server
+
+# macOS (using Homebrew)
+brew services start redis
+
+# Linux
+sudo systemctl start redis
+
+# Docker
+docker run -d -p 6379:6379 redis:latest
+```
+
+### 2. Clone and Build
 
 ```bash
 cd MinimalApiApp
@@ -83,7 +101,7 @@ dotnet restore
 dotnet build
 ```
 
-### 2. Run the Application
+### 3. Run the Application
 
 ```bash
 dotnet run
@@ -94,7 +112,7 @@ The API will be available at:
 - HTTPS: `https://localhost:5001`
 - Swagger UI: `https://localhost:5001/swagger`
 
-### 3. Run Tests
+### 4. Run Tests
 
 **All Tests:**
 ```bash
@@ -133,6 +151,12 @@ dotnet test IntegrationTests/MinimalApiApp.IntegrationTests.csproj
 ### Products (Version 2)
 - `GET /api/v2/products` - Get all products with enhanced response format
 
+### Cache Management ⭐ NEW!
+- `POST /api/cache` - Set cache entry
+- `GET /api/cache/{key}` - Get cache entry
+- `DELETE /api/cache/{key}` - Remove single cache entry
+- `DELETE /api/cache/prefix/{prefix}` - **Remove all cache entries by prefix** (uses Redis SCAN)
+
 ### Health Checks
 - `GET /api/health` - Overall application health
 - `GET /api/health/database` - Database connectivity check
@@ -141,13 +165,13 @@ dotnet test IntegrationTests/MinimalApiApp.IntegrationTests.csproj
 ## 🧪 Testing
 
 ### Test Coverage
-- **78 Total Tests** - 100% Passing ✅
-  - **56 Unit Tests** - Models, Validators, Services
+- **69 Total Tests Passing** ✅
+  - **47 Unit Tests** - Models, Validators, Services (with direct Redis mocking)
   - **22 Integration Tests** - Full API endpoint testing
 
 ### Testing Stack
 - **xUnit** - Test framework
-- **Moq** - Mocking framework
+- **Moq** - Mocking framework (mocking IConnectionMultiplexer, IDatabase)
 - **FluentAssertions** - Readable assertions
 - **WebApplicationFactory** - Integration testing
 
@@ -157,7 +181,8 @@ dotnet test IntegrationTests/MinimalApiApp.IntegrationTests.csproj
 - Model property initialization and validation
 - FluentValidation rule testing
 - Service layer with mocked dependencies
-- Cache service operations
+- Direct Redis operations with mocked IConnectionMultiplexer
+- Cache prefix removal functionality
 
 **Integration Tests:**
 - End-to-end API endpoint testing
@@ -202,20 +227,55 @@ Log format includes:
 
 ## 🔄 Caching Strategy
 
-- **Distributed Cache** - Redis for production
-- **Cache Keys** - Prefixed by entity type (e.g., `users:all`, `product:1`)
-- **Expiration** - 5 minutes default
+### Direct Redis Implementation
+- **Pure Redis** - Uses StackExchange.Redis directly (no Microsoft IDistributedCache wrapper)
+- **Full Redis Access** - Direct access to all Redis commands and features
+- **Cache Keys** - Prefixed by instance name (e.g., `MinimalApiApp:users:all`, `MinimalApiApp:product:1`)
+- **Expiration** - 5 minutes default, configurable per entry
 - **Cache Invalidation** - Automatic on create/update/delete operations
+- **Prefix-Based Removal** - Uses Redis SCAN command for efficient bulk deletion
+
+### Cache API Features
+```bash
+# Set cache entry
+curl -X POST "http://localhost:5000/api/cache" \
+  -H "Content-Type: application/json" \
+  -d '{"key":"product:1","value":"Laptop","expirationMinutes":10}'
+
+# Get cache entry
+curl "http://localhost:5000/api/cache/product:1"
+
+# Remove by prefix (removes all matching keys)
+curl -X DELETE "http://localhost:5000/api/cache/prefix/product"
+```
+
+### Advanced Redis Features Available
+With direct Redis access, you can now use:
+- **Pub/Sub** - Real-time messaging
+- **Transactions** - Atomic operations
+- **Lua Scripts** - Server-side scripting
+- **Lists, Sets, Hashes** - Advanced data structures
+- **Key Expiration Events** - Notifications
+
+See [REDIS_DIRECT_IMPLEMENTATION.md](REDIS_DIRECT_IMPLEMENTATION.md) for details.
 
 ## 📚 Additional Documentation
 
+### Core Documentation
 - [API Versioning Guide](API_VERSIONING.md)
 - [API Versioning Examples](API_VERSIONING_EXAMPLES.md)
 - [EF Core Setup Guide](EF_CORE_GUIDE.md)
 - [EF Core Testing Guide](EF_CORE_TESTING.md)
 - [Logging Configuration](LOGGING_GUIDE.md)
-- [Redis Setup Guide](REDIS_SETUP.md)
 - [Folder Organization](FOLDER_ORGANIZATION.md)
+
+### Redis & Caching Documentation ⭐
+- [Redis Direct Implementation](REDIS_DIRECT_IMPLEMENTATION.md) - Pure Redis implementation guide
+- [Redis Setup Guide](REDIS_SETUP.md) - Redis installation and configuration
+- [Cache Service Guide](CACHE_SERVICE_GUIDE.md) - Complete cache service documentation
+- [Cache API Endpoints](CACHE_API_ENDPOINTS.md) - Cache management API reference
+- [Cache Demo Guide](CACHE_DEMO.md) - Testing guide with cURL examples
+- [RemoveByPrefix Summary](REMOVEBYPREFIX_SUMMARY.md) - Prefix-based cache removal
 
 ## 🛠️ Technologies Used
 
@@ -224,7 +284,7 @@ Log format includes:
 - **Entity Framework Core** - ORM
 - **FluentValidation** - Validation
 - **Serilog** - Logging
-- **Redis** - Caching
+- **StackExchange.Redis** - Direct Redis client (no IDistributedCache wrapper)
 - **Polly** - Resilience
 - **Swagger/Swashbuckle** - API documentation
 - **Asp.Versioning** - API versioning
@@ -255,7 +315,31 @@ This project demonstrates:
 - Comprehensive testing strategies
 - API versioning strategies
 - Middleware development
-- Caching strategies
+- **Direct Redis integration** (no abstraction layers)
+- **Advanced caching strategies** with prefix-based invalidation
 - Structured logging
+
+## 🎯 Key Features Highlights
+
+### 1. Direct Redis Integration
+No Microsoft IDistributedCache abstraction - pure StackExchange.Redis for:
+- Better performance (fewer layers)
+- Full access to Redis commands
+- Advanced features (pub/sub, transactions, Lua scripts)
+- Direct control over serialization
+
+### 2. Cache Management API
+Complete cache CRUD operations exposed via REST API:
+- Set/Get cache entries
+- Remove individual entries
+- **Remove by prefix** (bulk deletion using Redis SCAN)
+- Perfect for testing and debugging
+
+### 3. Production-Ready Architecture
+- Comprehensive error handling
+- Request/response logging with correlation IDs
+- Health checks for all dependencies
+- Retry policies for transient failures
+- Full test coverage
 
 Perfect for learning modern .NET development practices! 🚀
