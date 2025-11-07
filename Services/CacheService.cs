@@ -87,7 +87,7 @@ public class RedisCacheService : ICacheService
             }
 
             var server = _redisConnection.GetServer(endpoints[0]);
-            var pattern = $"{prefix}*";
+            var pattern = $"MinimalApiApp:{prefix}";
             var keysToDelete = new List<RedisKey>();
 
             // Use SCAN to find all keys matching the pattern
