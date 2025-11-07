@@ -1,4 +1,6 @@
-namespace MinimalApiApp.Services;
+using MinimalApiApp.Services;
+
+namespace MinimalApiApp.Data;
 
 // Unit of Work interface
 public interface IUnitOfWork

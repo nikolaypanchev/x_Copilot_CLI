@@ -1,11 +1,11 @@
 using Microsoft.EntityFrameworkCore;
-using MinimalApiApp.Data;
 using MinimalApiApp.Models;
 using MinimalApiApp.Middleware;
+using MinimalApiApp.Services;
 using Polly;
 using Polly.Retry;
 
-namespace MinimalApiApp.Services;
+namespace MinimalApiApp.Data;
 
 // EF Core User Repository
 public class EfUserRepository : IUserService

@@ -1,7 +1,7 @@
 using Polly;
 using Polly.Retry;
 
-namespace MinimalApiApp.Policies;
+namespace MinimalApiApp.Middleware;
 
 public static class ResiliencePolicies
 {

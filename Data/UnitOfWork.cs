@@ -1,4 +1,6 @@
-namespace MinimalApiApp.Services;
+using MinimalApiApp.Services;
+
+namespace MinimalApiApp.Data;
 
 // Simple Unit of Work implementation for the in-memory repository
 public class UnitOfWork : IUnitOfWork

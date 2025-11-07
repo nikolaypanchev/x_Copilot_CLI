@@ -1,5 +1,6 @@
 using MinimalApiApp.Models;
 using MinimalApiApp.Middleware;
+using MinimalApiApp.Data;
 using Polly;
 using Polly.Retry;
 
