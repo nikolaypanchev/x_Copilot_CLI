@@ -1,0 +1,41 @@
+MINIMAL API APPLICATION - SETUP GUIDE
+=====================================
+
+IMPORTANT: PowerShell 6+ is required to run the automated setup. 
+Install from: https://aka.ms/powershell
+
+Once PowerShell 6+ is installed, you can use the setup.bat file or run these commands:
+
+OPTION 1: Using Command Prompt (cmd)
+-------------------------------------
+mkdir MinimalApiApp
+mkdir MinimalApiApp\Models
+mkdir MinimalApiApp\Services  
+mkdir MinimalApiApp.Tests
+
+Then manually create each file listed below in their respective directories.
+
+OPTION 2: Using PowerShell 6+ (Recommended)
+-------------------------------------------
+After installing PowerShell 6+, run:
+pwsh -Command "New-Item -ItemType Directory -Path MinimalApiApp\Models,MinimalApiApp\Services,MinimalApiApp.Tests -Force"
+
+FILES TO CREATE:
+===============
+
+MinimalApiApp\MinimalApiApp.csproj
+MinimalApiApp\Program.cs
+MinimalApiApp\appsettings.json
+MinimalApiApp\appsettings.Development.json
+MinimalApiApp\Models\User.cs
+MinimalApiApp\Models\Product.cs
+MinimalApiApp\Services\IUserService.cs
+MinimalApiApp\Services\UserService.cs
+MinimalApiApp\Services\IProductService.cs
+MinimalApiApp\Services\ProductService.cs
+
+MinimalApiApp.Tests\MinimalApiApp.Tests.csproj
+MinimalApiApp.Tests\UserServiceTests.cs
+MinimalApiApp.Tests\ProductServiceTests.cs
+
+All file contents are provided in separate files with .txt extension for easy copying.
