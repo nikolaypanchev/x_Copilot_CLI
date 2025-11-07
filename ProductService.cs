@@ -1,4 +1,5 @@
 using MinimalApiApp.Models;
+using MinimalApiApp.Middleware;
 
 namespace MinimalApiApp.Services;
 
@@ -26,6 +27,8 @@ public class InMemoryProductRepository : IProductRepository
     public Task<Product?> GetByIdAsync(int id)
     {
         var product = _products.FirstOrDefault(p => p.Id == id);
+        if (product == null)
+            throw new NotFoundException($"Product with ID {id} not found");
         return Task.FromResult(product);
     }
 
@@ -40,7 +43,7 @@ public class InMemoryProductRepository : IProductRepository
     {
         var existing = _products.FirstOrDefault(p => p.Id == id);
         if (existing == null)
-            return Task.FromResult<Product?>(null);
+            throw new NotFoundException($"Product with ID {id} not found");
 
         existing.Name = product.Name;
         existing.Description = product.Description;
@@ -53,7 +56,7 @@ public class InMemoryProductRepository : IProductRepository
     {
         var product = _products.FirstOrDefault(p => p.Id == id);
         if (product == null)
-            return Task.FromResult(false);
+            throw new NotFoundException($"Product with ID {id} not found");
 
         _products.Remove(product);
         return Task.FromResult(true);

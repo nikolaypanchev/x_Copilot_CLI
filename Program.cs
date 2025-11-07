@@ -23,6 +23,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Error handling middleware (must be first)
+app.UseMiddleware<ErrorHandlingMiddleware>();
+
 // Email validation middleware for user endpoints
 app.UseMiddleware<EmailValidationMiddleware>();
 
@@ -38,7 +41,7 @@ app.MapGet("/api/users", async (IUserService userService) =>
 app.MapGet("/api/users/{id}", async (int id, IUserService userService) =>
 {
     var user = await userService.GetUserByIdAsync(id);
-    return user is not null ? Results.Ok(user) : Results.NotFound();
+    return Results.Ok(user);
 })
 .WithName("GetUserById")
 .WithOpenApi();
@@ -54,15 +57,15 @@ app.MapPost("/api/users", async (User user, IUserService userService) =>
 app.MapPut("/api/users/{id}", async (int id, User user, IUserService userService) =>
 {
     var updatedUser = await userService.UpdateUserAsync(id, user);
-    return updatedUser is not null ? Results.Ok(updatedUser) : Results.NotFound();
+    return Results.Ok(updatedUser);
 })
 .WithName("UpdateUser")
 .WithOpenApi();
 
 app.MapDelete("/api/users/{id}", async (int id, IUserService userService) =>
 {
-    var deleted = await userService.DeleteUserAsync(id);
-    return deleted ? Results.NoContent() : Results.NotFound();
+    await userService.DeleteUserAsync(id);
+    return Results.NoContent();
 })
 .WithName("DeleteUser")
 .WithOpenApi();
@@ -79,7 +82,7 @@ app.MapGet("/api/products", async (IProductService productService) =>
 app.MapGet("/api/products/{id}", async (int id, IProductService productService) =>
 {
     var product = await productService.GetProductByIdAsync(id);
-    return product is not null ? Results.Ok(product) : Results.NotFound();
+    return Results.Ok(product);
 })
 .WithName("GetProductById")
 .WithOpenApi();
@@ -95,15 +98,15 @@ app.MapPost("/api/products", async (Product product, IProductService productServ
 app.MapPut("/api/products/{id}", async (int id, Product product, IProductService productService) =>
 {
     var updatedProduct = await productService.UpdateProductAsync(id, product);
-    return updatedProduct is not null ? Results.Ok(updatedProduct) : Results.NotFound();
+    return Results.Ok(updatedProduct);
 })
 .WithName("UpdateProduct")
 .WithOpenApi();
 
 app.MapDelete("/api/products/{id}", async (int id, IProductService productService) =>
 {
-    var deleted = await productService.DeleteProductAsync(id);
-    return deleted ? Results.NoContent() : Results.NotFound();
+    await productService.DeleteProductAsync(id);
+    return Results.NoContent();
 })
 .WithName("DeleteProduct")
 .WithOpenApi();

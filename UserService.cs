@@ -1,4 +1,5 @@
 using MinimalApiApp.Models;
+using MinimalApiApp.Middleware;
 
 namespace MinimalApiApp.Services;
 
@@ -15,6 +16,8 @@ public class UserService : IUserService
     public Task<User?> GetUserByIdAsync(int id)
     {
         var user = _users.FirstOrDefault(u => u.Id == id);
+        if (user == null)
+            throw new NotFoundException($"User with ID {id} not found");
         return Task.FromResult(user);
     }
 
@@ -30,7 +33,7 @@ public class UserService : IUserService
     {
         var existingUser = _users.FirstOrDefault(u => u.Id == id);
         if (existingUser == null)
-            return Task.FromResult<User?>(null);
+            throw new NotFoundException($"User with ID {id} not found");
 
         existingUser.Name = user.Name;
         existingUser.Email = user.Email;
@@ -41,7 +44,7 @@ public class UserService : IUserService
     {
         var user = _users.FirstOrDefault(u => u.Id == id);
         if (user == null)
-            return Task.FromResult(false);
+            throw new NotFoundException($"User with ID {id} not found");
 
         _users.Remove(user);
         return Task.FromResult(true);
