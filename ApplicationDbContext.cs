@@ -30,7 +30,7 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.Email)
                 .IsUnique();
             entity.Property(e => e.CreatedAt)
-                .HasDefaultValueSql("GETUTCDATE()");
+                .IsRequired();
         });
 
         // Product configuration
