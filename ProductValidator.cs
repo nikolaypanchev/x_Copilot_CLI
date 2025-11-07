@@ -33,6 +33,8 @@ public class ProductValidator : AbstractValidator<Product>
         RuleFor(x => x.Description)
             .NotNull()
             .WithMessage("Product description cannot be null")
+            .NotEmpty()
+            .WithMessage("Product description is required")
             .MaximumLength(10)
             .WithMessage("Product description must not exceed 10 characters");
 
