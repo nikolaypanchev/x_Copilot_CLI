@@ -21,6 +21,7 @@ builder.Services.AddSingleton<IUnitOfWork, UnitOfWork>();
 
 // Register FluentValidation
 builder.Services.AddScoped<IValidator<Product>, ProductValidator>();
+builder.Services.AddScoped<IValidator<User>, UserValidator>();
 
 var app = builder.Build();
 
@@ -35,11 +36,8 @@ app.UseHttpsRedirection();
 // Error handling middleware (must be first)
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
-// Validation middleware for products
+// Validation middleware for products and users
 app.UseMiddleware<ValidationMiddleware>();
-
-// Email validation middleware for user endpoints
-app.UseMiddleware<EmailValidationMiddleware>();
 
 // User endpoints
 app.MapGet("/api/users", async (IUserService userService) =>

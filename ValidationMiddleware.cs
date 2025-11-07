@@ -21,55 +21,67 @@ public class ValidationMiddleware
         {
             if (context.Request.Path.StartsWithSegments("/api/products"))
             {
-                context.Request.EnableBuffering();
-                
-                try
-                {
-                    var product = await JsonSerializer.DeserializeAsync<Product>(
-                        context.Request.Body,
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-                    );
-
-                    if (product != null)
-                    {
-                        var validator = serviceProvider.GetRequiredService<IValidator<Product>>();
-                        var validationResult = await validator.ValidateAsync(product);
-
-                        if (!validationResult.IsValid)
-                        {
-                            _logger.LogWarning("Product validation failed: {Errors}", 
-                                string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage)));
-
-                            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                            context.Response.ContentType = "application/json";
-
-                            var errors = validationResult.Errors
-                                .GroupBy(e => e.PropertyName)
-                                .ToDictionary(
-                                    g => g.Key,
-                                    g => g.Select(e => e.ErrorMessage).ToArray()
-                                );
-
-                            await context.Response.WriteAsJsonAsync(new
-                            {
-                                error = "Validation failed",
-                                statusCode = 400,
-                                errors = errors
-                            });
-                            return;
-                        }
-                    }
-                    
-                    context.Request.Body.Position = 0;
-                }
-                catch (JsonException)
-                {
-                    // Let the endpoint handle deserialization errors
-                    context.Request.Body.Position = 0;
-                }
+                await ValidateRequest<Product>(context, serviceProvider);
+                if (context.Response.HasStarted) return;
+            }
+            else if (context.Request.Path.StartsWithSegments("/api/users"))
+            {
+                await ValidateRequest<User>(context, serviceProvider);
+                if (context.Response.HasStarted) return;
             }
         }
 
         await _next(context);
+    }
+
+    private async Task ValidateRequest<T>(HttpContext context, IServiceProvider serviceProvider) where T : class
+    {
+        context.Request.EnableBuffering();
+        
+        try
+        {
+            var entity = await JsonSerializer.DeserializeAsync<T>(
+                context.Request.Body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            );
+
+            if (entity != null)
+            {
+                var validator = serviceProvider.GetRequiredService<IValidator<T>>();
+                var validationResult = await validator.ValidateAsync(entity);
+
+                if (!validationResult.IsValid)
+                {
+                    _logger.LogWarning("{Type} validation failed: {Errors}", 
+                        typeof(T).Name,
+                        string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    context.Response.ContentType = "application/json";
+
+                    var errors = validationResult.Errors
+                        .GroupBy(e => e.PropertyName)
+                        .ToDictionary(
+                            g => g.Key,
+                            g => g.Select(e => e.ErrorMessage).ToArray()
+                        );
+
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        error = "Validation failed",
+                        statusCode = 400,
+                        errors = errors
+                    });
+                    return;
+                }
+            }
+            
+            context.Request.Body.Position = 0;
+        }
+        catch (JsonException)
+        {
+            // Let the endpoint handle deserialization errors
+            context.Request.Body.Position = 0;
+        }
     }
 }
