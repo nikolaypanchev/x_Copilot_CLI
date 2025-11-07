@@ -376,6 +376,84 @@ try
     .WithOpenApi()
     .MapToApiVersion(2, 0);
 
+    // ===== CACHE MANAGEMENT ENDPOINTS (Non-versioned) =====
+    
+    // Remove cache entry by key
+    app.MapDelete("/api/cache/{key}", async (string key, ICacheService cacheService) =>
+    {
+        await cacheService.RemoveAsync(key);
+        return Results.Ok(new
+        {
+            message = $"Cache entry '{key}' removed successfully",
+            timestamp = DateTime.UtcNow
+        });
+    })
+    .WithName("RemoveCacheByKey")
+    .WithOpenApi()
+    .WithTags("Cache Management");
+
+    // Remove cache entries by prefix (NEW!)
+    app.MapDelete("/api/cache/prefix/{prefix}", async (string prefix, ICacheService cacheService) =>
+    {
+        await cacheService.RemoveByPrefixAsync(prefix);
+        return Results.Ok(new
+        {
+            message = $"All cache entries with prefix '{prefix}' removed successfully",
+            prefix = prefix,
+            timestamp = DateTime.UtcNow
+        });
+    })
+    .WithName("RemoveCacheByPrefix")
+    .WithOpenApi()
+    .WithSummary("Remove all cache entries that start with the specified prefix")
+    .WithDescription("This endpoint uses Redis SCAN to find and remove all keys matching the prefix pattern. Example: prefix='product' will remove 'product:1', 'product:2', 'products:all', etc.")
+    .WithTags("Cache Management");
+
+    // Set cache entry (for testing)
+    app.MapPost("/api/cache", async (CacheEntry entry, ICacheService cacheService) =>
+    {
+        var expiration = entry.ExpirationMinutes.HasValue 
+            ? TimeSpan.FromMinutes(entry.ExpirationMinutes.Value) 
+            : TimeSpan.FromMinutes(5);
+            
+        await cacheService.SetAsync(entry.Key, entry.Value, expiration);
+        return Results.Ok(new
+        {
+            message = $"Cache entry '{entry.Key}' set successfully",
+            key = entry.Key,
+            expirationMinutes = entry.ExpirationMinutes ?? 5,
+            timestamp = DateTime.UtcNow
+        });
+    })
+    .WithName("SetCacheEntry")
+    .WithOpenApi()
+    .WithTags("Cache Management");
+
+    // Get cache entry (for testing)
+    app.MapGet("/api/cache/{key}", async (string key, ICacheService cacheService) =>
+    {
+        var value = await cacheService.GetAsync<object>(key);
+        if (value == null)
+        {
+            return Results.NotFound(new
+            {
+                message = $"Cache entry '{key}' not found",
+                key = key,
+                timestamp = DateTime.UtcNow
+            });
+        }
+        
+        return Results.Ok(new
+        {
+            key = key,
+            value = value,
+            timestamp = DateTime.UtcNow
+        });
+    })
+    .WithName("GetCacheEntry")
+    .WithOpenApi()
+    .WithTags("Cache Management");
+
     // ===== HEALTH CHECK ENDPOINTS (Non-versioned) =====
     
     // Database health check endpoint
