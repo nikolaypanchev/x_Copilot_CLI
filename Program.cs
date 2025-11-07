@@ -3,56 +3,74 @@ using MinimalApiApp.Services;
 using MinimalApiApp.Middleware;
 using MinimalApiApp.Validators;
 using FluentValidation;
+using Serilog;
 
-var builder = WebApplication.CreateBuilder(args);
+// Configure Serilog
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json")
+        .Build())
+    .CreateLogger();
 
-// Configure Redis
-var redisConnectionString = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
-var redisInstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName") ?? "MinimalApiApp:";
-
-builder.Services.AddStackExchangeRedisCache(options =>
+try
 {
-    options.Configuration = redisConnectionString;
-    options.InstanceName = redisInstanceName;
-});
+    Log.Information("Starting web application");
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+    var builder = WebApplication.CreateBuilder(args);
 
-// Register cache service
-builder.Services.AddSingleton<ICacheService, RedisCacheService>();
+    // Add Serilog
+    builder.Host.UseSerilog();
 
-// Register repository
-builder.Services.AddSingleton<IProductRepository, InMemoryProductRepository>();
+    // Configure Redis
+    var redisConnectionString = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
+    var redisInstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName") ?? "MinimalApiApp:";
 
-builder.Services.AddSingleton<IUserService, UserService>();
-builder.Services.AddSingleton<IProductService, ProductService>();
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnectionString;
+        options.InstanceName = redisInstanceName;
+    });
 
-// Register UnitOfWork which exposes the existing services
-builder.Services.AddSingleton<IUnitOfWork, UnitOfWork>();
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen();
 
-// Register FluentValidation
-builder.Services.AddScoped<IValidator<Product>, ProductValidator>();
-builder.Services.AddScoped<IValidator<User>, UserValidator>();
+    // Register cache service
+    builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 
-var app = builder.Build();
+    // Register repository
+    builder.Services.AddSingleton<IProductRepository, InMemoryProductRepository>();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    builder.Services.AddSingleton<IUserService, UserService>();
+    builder.Services.AddSingleton<IProductService, ProductService>();
 
-app.UseHttpsRedirection();
+    // Register UnitOfWork which exposes the existing services
+    builder.Services.AddSingleton<IUnitOfWork, UnitOfWork>();
 
-// Resilience middleware (for retry policies)
-app.UseMiddleware<ResilienceMiddleware>();
+    // Register FluentValidation
+    builder.Services.AddScoped<IValidator<Product>, ProductValidator>();
+    builder.Services.AddScoped<IValidator<User>, UserValidator>();
 
-// Error handling middleware (must be first)
-app.UseMiddleware<ErrorHandlingMiddleware>();
+    var app = builder.Build();
 
-// Validation middleware for products and users
-app.UseMiddleware<ValidationMiddleware>();
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI();
+    }
+
+    app.UseHttpsRedirection();
+
+    // Logging middleware (should be first to log all requests)
+    app.UseMiddleware<LoggingMiddleware>();
+
+    // Resilience middleware (for retry policies)
+    app.UseMiddleware<ResilienceMiddleware>();
+
+    // Error handling middleware (must be first)
+    app.UseMiddleware<ErrorHandlingMiddleware>();
+
+    // Validation middleware for products and users
+    app.UseMiddleware<ValidationMiddleware>();
 
 // User endpoints
 app.MapGet("/api/users", async (IUserService userService) =>
@@ -163,6 +181,15 @@ app.MapGet("/api/health/redis", async (ICacheService cacheService) =>
 .WithName("RedisHealthCheck")
 .WithOpenApi();
 
-app.Run();
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
 
 public partial class Program { }

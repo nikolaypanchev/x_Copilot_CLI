@@ -31,3 +31,7 @@ _ReSharper*/
 .idea/
 #Nuget packages folder
 packages/
+
+# Serilog log files
+Logs/
+*.log
