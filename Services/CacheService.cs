@@ -1,34 +1,37 @@
 using System.Text.Json;
-using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
 namespace MinimalApiApp.Services;
 
 public class RedisCacheService : ICacheService
 {
-    private readonly IDistributedCache _cache;
+    private readonly IConnectionMultiplexer _redisConnection;
+    private readonly IDatabase _database;
     private readonly ILogger<RedisCacheService> _logger;
-    private readonly IConnectionMultiplexer? _redisConnection;
+    private readonly string _instancePrefix;
 
     public RedisCacheService(
-        IDistributedCache cache, 
+        IConnectionMultiplexer redisConnection,
         ILogger<RedisCacheService> logger,
-        IConnectionMultiplexer? redisConnection = null)
+        IConfiguration configuration)
     {
-        _cache = cache;
-        _logger = logger;
         _redisConnection = redisConnection;
+        _database = redisConnection.GetDatabase();
+        _logger = logger;
+        _instancePrefix = configuration.GetValue<string>("Redis:InstanceName") ?? "MinimalApiApp:";
     }
 
     public async Task<T?> GetAsync<T>(string key)
     {
         try
         {
-            var cachedData = await _cache.GetStringAsync(key);
-            if (cachedData == null)
+            var fullKey = $"{_instancePrefix}{key}";
+            var cachedData = await _database.StringGetAsync(fullKey);
+            
+            if (!cachedData.HasValue || cachedData.IsNullOrEmpty)
                 return default;
 
-            return JsonSerializer.Deserialize<T>(cachedData);
+            return JsonSerializer.Deserialize<T>(cachedData.ToString());
         }
         catch (Exception ex)
         {
@@ -41,13 +44,13 @@ public class RedisCacheService : ICacheService
     {
         try
         {
+            var fullKey = $"{_instancePrefix}{key}";
             var serializedData = JsonSerializer.Serialize(value);
-            var options = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = expiration ?? TimeSpan.FromMinutes(5)
-            };
+            var expirationTime = expiration ?? TimeSpan.FromMinutes(5);
 
-            await _cache.SetStringAsync(key, serializedData, options);
+            await _database.StringSetAsync(fullKey, serializedData, expirationTime);
+            
+            _logger.LogDebug("Set cache key: {Key} with expiration: {Expiration}", key, expirationTime);
         }
         catch (Exception ex)
         {
@@ -59,7 +62,10 @@ public class RedisCacheService : ICacheService
     {
         try
         {
-            await _cache.RemoveAsync(key);
+            var fullKey = $"{_instancePrefix}{key}";
+            await _database.KeyDeleteAsync(fullKey);
+            
+            _logger.LogDebug("Removed cache key: {Key}", key);
         }
         catch (Exception ex)
         {
@@ -71,13 +77,6 @@ public class RedisCacheService : ICacheService
     {
         try
         {
-            if (_redisConnection == null)
-            {
-                _logger.LogWarning("Redis connection not available. Cannot remove keys by prefix: {Prefix}", prefix);
-                return;
-            }
-
-            var database = _redisConnection.GetDatabase();
             var endpoints = _redisConnection.GetEndPoints();
             
             if (endpoints.Length == 0)
@@ -87,7 +86,7 @@ public class RedisCacheService : ICacheService
             }
 
             var server = _redisConnection.GetServer(endpoints[0]);
-            var pattern = $"MinimalApiApp:{prefix}";
+            var pattern = $"{_instancePrefix}{prefix}*";
             var keysToDelete = new List<RedisKey>();
 
             // Use SCAN to find all keys matching the pattern
@@ -99,7 +98,7 @@ public class RedisCacheService : ICacheService
             if (keysToDelete.Count > 0)
             {
                 // Delete keys in batches
-                await database.KeyDeleteAsync(keysToDelete.ToArray());
+                await _database.KeyDeleteAsync(keysToDelete.ToArray());
                 _logger.LogInformation("Removed {Count} cache keys with prefix: {Prefix}", keysToDelete.Count, prefix);
             }
             else

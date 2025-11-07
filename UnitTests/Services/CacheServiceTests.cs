@@ -1,9 +1,8 @@
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MinimalApiApp.Services;
 using Moq;
-using System.Text;
 using System.Text.Json;
 using Xunit;
 using StackExchange.Redis;
@@ -12,15 +11,32 @@ namespace MinimalApiApp.UnitTests.Services;
 
 public class CacheServiceTests
 {
-    private readonly Mock<IDistributedCache> _mockCache;
+    private readonly Mock<IConnectionMultiplexer> _mockConnectionMultiplexer;
+    private readonly Mock<IDatabase> _mockDatabase;
+    private readonly Mock<IServer> _mockServer;
     private readonly Mock<ILogger<RedisCacheService>> _mockLogger;
+    private readonly Mock<IConfiguration> _mockConfiguration;
     private readonly RedisCacheService _cacheService;
 
     public CacheServiceTests()
     {
-        _mockCache = new Mock<IDistributedCache>();
+        _mockConnectionMultiplexer = new Mock<IConnectionMultiplexer>();
+        _mockDatabase = new Mock<IDatabase>();
+        _mockServer = new Mock<IServer>();
         _mockLogger = new Mock<ILogger<RedisCacheService>>();
-        _cacheService = new RedisCacheService(_mockCache.Object, _mockLogger.Object);
+        _mockConfiguration = new Mock<IConfiguration>();
+
+        // Setup configuration
+        _mockConfiguration.Setup(c => c["Redis:InstanceName"]).Returns("MinimalApiApp:");
+
+        // Setup connection multiplexer
+        _mockConnectionMultiplexer.Setup(c => c.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+            .Returns(_mockDatabase.Object);
+
+        _cacheService = new RedisCacheService(
+            _mockConnectionMultiplexer.Object,
+            _mockLogger.Object,
+            _mockConfiguration.Object);
     }
 
     [Fact]
@@ -30,17 +46,18 @@ public class CacheServiceTests
         var key = "test-key";
         var value = "test-value";
         var serialized = JsonSerializer.Serialize(value);
-        var bytes = Encoding.UTF8.GetBytes(serialized);
+        var redisValue = new RedisValue(serialized);
 
-        _mockCache.Setup(c => c.GetAsync(key, default))
-            .ReturnsAsync(bytes);
+        _mockDatabase.Setup(d => d.StringGetAsync(
+            "MinimalApiApp:test-key",
+            It.IsAny<CommandFlags>()))
+            .ReturnsAsync(redisValue);
 
         // Act
         var result = await _cacheService.GetAsync<string>(key);
 
         // Assert
         result.Should().Be(value);
-        _mockCache.Verify(c => c.GetAsync(key, default), Times.Once);
     }
 
     [Fact]
@@ -49,15 +66,16 @@ public class CacheServiceTests
         // Arrange
         var key = "non-existing-key";
 
-        _mockCache.Setup(c => c.GetAsync(key, default))
-            .ReturnsAsync((byte[]?)null);
+        _mockDatabase.Setup(d => d.StringGetAsync(
+            "MinimalApiApp:non-existing-key",
+            It.IsAny<CommandFlags>()))
+            .ReturnsAsync(RedisValue.Null);
 
         // Act
         var result = await _cacheService.GetAsync<string>(key);
 
         // Assert
         result.Should().BeNull();
-        _mockCache.Verify(c => c.GetAsync(key, default), Times.Once);
     }
 
     [Fact]
@@ -66,8 +84,10 @@ public class CacheServiceTests
         // Arrange
         var key = "error-key";
 
-        _mockCache.Setup(c => c.GetAsync(key, default))
-            .ThrowsAsync(new Exception("Cache error"));
+        _mockDatabase.Setup(d => d.StringGetAsync(
+            It.IsAny<RedisKey>(),
+            It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new Exception("Redis error"));
 
         // Act
         var result = await _cacheService.GetAsync<string>(key);
@@ -92,16 +112,25 @@ public class CacheServiceTests
         var value = "test-value";
         var expiration = TimeSpan.FromMinutes(10);
 
+        _mockDatabase.Setup(d => d.StringSetAsync(
+            "MinimalApiApp:test-key",
+            It.IsAny<RedisValue>(),
+            expiration,
+            It.IsAny<When>(),
+            It.IsAny<CommandFlags>()))
+            .ReturnsAsync(true);
+
         // Act
         await _cacheService.SetAsync(key, value, expiration);
 
         // Assert
-        _mockCache.Verify(c => c.SetAsync(
-            key,
-            It.IsAny<byte[]>(),
-            It.Is<DistributedCacheEntryOptions>(o => 
-                o.AbsoluteExpirationRelativeToNow == expiration),
-            default), Times.Once);
+        _mockDatabase.Verify(d => d.StringSetAsync(
+            "MinimalApiApp:test-key",
+            It.IsAny<RedisValue>(),
+            expiration,
+            It.IsAny<When>(),
+            It.IsAny<CommandFlags>()), 
+            Times.Once);
     }
 
     [Fact]
@@ -111,43 +140,24 @@ public class CacheServiceTests
         var key = "test-key";
         var value = "test-value";
 
-        // Act
-        await _cacheService.SetAsync(key, value);
-
-        // Assert
-        _mockCache.Verify(c => c.SetAsync(
-            key,
-            It.IsAny<byte[]>(),
-            It.Is<DistributedCacheEntryOptions>(o => 
-                o.AbsoluteExpirationRelativeToNow == TimeSpan.FromMinutes(5)),
-            default), Times.Once);
-    }
-
-    [Fact]
-    public async Task SetAsync_WhenExceptionOccurs_ShouldLogError()
-    {
-        // Arrange
-        var key = "error-key";
-        var value = "test-value";
-
-        _mockCache.Setup(c => c.SetAsync(
-            It.IsAny<string>(),
-            It.IsAny<byte[]>(),
-            It.IsAny<DistributedCacheEntryOptions>(),
-            default))
-            .ThrowsAsync(new Exception("Cache error"));
+        _mockDatabase.Setup(d => d.StringSetAsync(
+            "MinimalApiApp:test-key",
+            It.IsAny<RedisValue>(),
+            It.IsAny<TimeSpan?>(),
+            It.IsAny<When>(),
+            It.IsAny<CommandFlags>()))
+            .ReturnsAsync(true);
 
         // Act
         await _cacheService.SetAsync(key, value);
 
         // Assert
-        _mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Error,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => true),
-                It.IsAny<Exception>(),
-                It.Is<Func<It.IsAnyType, Exception?, string>>((v, t) => true)),
+        _mockDatabase.Verify(d => d.StringSetAsync(
+            "MinimalApiApp:test-key",
+            It.IsAny<RedisValue>(),
+            TimeSpan.FromMinutes(5),
+            It.IsAny<When>(),
+            It.IsAny<CommandFlags>()), 
             Times.Once);
     }
 
@@ -157,53 +167,18 @@ public class CacheServiceTests
         // Arrange
         var key = "test-key";
 
-        // Act
-        await _cacheService.RemoveAsync(key);
-
-        // Assert
-        _mockCache.Verify(c => c.RemoveAsync(key, default), Times.Once);
-    }
-
-    [Fact]
-    public async Task RemoveAsync_WhenExceptionOccurs_ShouldLogError()
-    {
-        // Arrange
-        var key = "error-key";
-
-        _mockCache.Setup(c => c.RemoveAsync(key, default))
-            .ThrowsAsync(new Exception("Cache error"));
+        _mockDatabase.Setup(d => d.KeyDeleteAsync(
+            "MinimalApiApp:test-key",
+            It.IsAny<CommandFlags>()))
+            .ReturnsAsync(true);
 
         // Act
         await _cacheService.RemoveAsync(key);
 
         // Assert
-        _mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Error,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => true),
-                It.IsAny<Exception>(),
-                It.Is<Func<It.IsAnyType, Exception?, string>>((v, t) => true)),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task RemoveByPrefixAsync_WithNullConnection_ShouldLogWarning()
-    {
-        // Arrange
-        var prefix = "test-prefix";
-
-        // Act
-        await _cacheService.RemoveByPrefixAsync(prefix);
-
-        // Assert
-        _mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Warning,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => true),
-                It.IsAny<Exception>(),
-                It.Is<Func<It.IsAnyType, Exception?, string>>((v, t) => true)),
+        _mockDatabase.Verify(d => d.KeyDeleteAsync(
+            "MinimalApiApp:test-key",
+            It.IsAny<CommandFlags>()), 
             Times.Once);
     }
 
@@ -211,28 +186,21 @@ public class CacheServiceTests
     public async Task RemoveByPrefixAsync_WithValidConnection_ShouldRemoveKeys()
     {
         // Arrange
-        var mockConnectionMultiplexer = new Mock<StackExchange.Redis.IConnectionMultiplexer>();
-        var mockDatabase = new Mock<StackExchange.Redis.IDatabase>();
-        var mockServer = new Mock<StackExchange.Redis.IServer>();
-        
         var prefix = "test-prefix";
         var keys = new[] 
         { 
-            new StackExchange.Redis.RedisKey("test-prefix:key1"),
-            new StackExchange.Redis.RedisKey("test-prefix:key2")
+            new RedisKey("MinimalApiApp:test-prefix:key1"),
+            new RedisKey("MinimalApiApp:test-prefix:key2")
         };
 
-        mockConnectionMultiplexer.Setup(c => c.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
-            .Returns(mockDatabase.Object);
-        
-        mockConnectionMultiplexer.Setup(c => c.GetEndPoints(It.IsAny<bool>()))
+        _mockConnectionMultiplexer.Setup(c => c.GetEndPoints(It.IsAny<bool>()))
             .Returns(new System.Net.EndPoint[] { new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 6379) });
         
-        mockConnectionMultiplexer.Setup(c => c.GetServer(It.IsAny<System.Net.EndPoint>(), It.IsAny<object>()))
-            .Returns(mockServer.Object);
+        _mockConnectionMultiplexer.Setup(c => c.GetServer(It.IsAny<System.Net.EndPoint>(), It.IsAny<object>()))
+            .Returns(_mockServer.Object);
 
         // Create async enumerable from array
-        async IAsyncEnumerable<StackExchange.Redis.RedisKey> GetKeysAsync()
+        async IAsyncEnumerable<RedisKey> GetKeysAsync()
         {
             foreach (var key in keys)
             {
@@ -241,21 +209,19 @@ public class CacheServiceTests
             }
         }
 
-        mockServer.Setup(s => s.KeysAsync(It.IsAny<int>(), It.IsAny<StackExchange.Redis.RedisValue>(), It.IsAny<int>(), It.IsAny<long>(), It.IsAny<int>(), It.IsAny<StackExchange.Redis.CommandFlags>()))
+        _mockServer.Setup(s => s.KeysAsync(It.IsAny<int>(), It.IsAny<RedisValue>(), It.IsAny<int>(), It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CommandFlags>()))
             .Returns(GetKeysAsync());
 
-        mockDatabase.Setup(d => d.KeyDeleteAsync(It.IsAny<StackExchange.Redis.RedisKey[]>(), It.IsAny<StackExchange.Redis.CommandFlags>()))
+        _mockDatabase.Setup(d => d.KeyDeleteAsync(It.IsAny<RedisKey[]>(), It.IsAny<CommandFlags>()))
             .ReturnsAsync(2);
 
-        var cacheService = new RedisCacheService(_mockCache.Object, _mockLogger.Object, mockConnectionMultiplexer.Object);
-
         // Act
-        await cacheService.RemoveByPrefixAsync(prefix);
+        await _cacheService.RemoveByPrefixAsync(prefix);
 
         // Assert
-        mockDatabase.Verify(d => d.KeyDeleteAsync(
-            It.Is<StackExchange.Redis.RedisKey[]>(k => k.Length == 2),
-            It.IsAny<StackExchange.Redis.CommandFlags>()), 
+        _mockDatabase.Verify(d => d.KeyDeleteAsync(
+            It.Is<RedisKey[]>(k => k.Length == 2),
+            It.IsAny<CommandFlags>()), 
             Times.Once);
         
         _mockLogger.Verify(

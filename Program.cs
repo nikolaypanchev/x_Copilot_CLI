@@ -48,36 +48,28 @@ try
         options.SubstituteApiVersionInUrl = true;
     });
 
-    // Configure Redis
+    // Configure Redis - Direct Connection (No Microsoft IDistributedCache)
     var redisConnectionString = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
-    var redisInstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName") ?? "MinimalApiApp:";
 
-    // Register IConnectionMultiplexer for advanced Redis operations
+    // Register IConnectionMultiplexer for direct Redis operations
     try
     {
-        var redisConnection = StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString);
-        builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(redisConnection);
+        var redisConnection = ConnectionMultiplexer.Connect(redisConnectionString);
+        builder.Services.AddSingleton<IConnectionMultiplexer>(redisConnection);
         Log.Information("Redis connection established successfully");
     }
     catch (Exception ex)
     {
-        Log.Warning(ex, "Could not connect to Redis. Cache operations will be limited.");
-        // Register null to allow graceful degradation
-        builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(provider => null!);
+        Log.Error(ex, "Failed to connect to Redis. Application requires Redis to function.");
+        throw new InvalidOperationException("Redis connection is required. Please ensure Redis is running.", ex);
     }
-
-    builder.Services.AddStackExchangeRedisCache(options =>
-    {
-        options.Configuration = redisConnectionString;
-        options.InstanceName = redisInstanceName;
-    });
 
     builder.Services.AddEndpointsApiExplorer();
     
     // Add versioned Swagger
     builder.Services.AddVersionedSwagger();
 
-    // Register cache service
+    // Register cache service (Redis-only, no Microsoft IDistributedCache)
     builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 
     // Register EF Core repositories (use scoped for DbContext)
