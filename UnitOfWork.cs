@@ -5,9 +5,9 @@ public class UnitOfWork : IUnitOfWork
 {
     public IProductRepository Products { get; }
 
-    public UnitOfWork(IProductRepository? productRepository = null)
+    public UnitOfWork(IProductRepository productRepository)
     {
-        Products = productRepository ?? new InMemoryProductRepository();
+        Products = productRepository;
     }
 
     // In a real implementation this would persist transaction/changes.

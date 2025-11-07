@@ -1,17 +1,26 @@
 using MinimalApiApp.Models;
 using MinimalApiApp.Services;
 using MinimalApiApp.Middleware;
+using MinimalApiApp.Validators;
+using FluentValidation;
 
 var builder = WebApplication.CreateBuilder(args);
 
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Register repository
+builder.Services.AddSingleton<IProductRepository, InMemoryProductRepository>();
+
 builder.Services.AddSingleton<IUserService, UserService>();
 builder.Services.AddSingleton<IProductService, ProductService>();
 
 // Register UnitOfWork which exposes the existing services
 builder.Services.AddSingleton<IUnitOfWork, UnitOfWork>();
+
+// Register FluentValidation
+builder.Services.AddScoped<IValidator<Product>, ProductValidator>();
 
 var app = builder.Build();
 
@@ -25,6 +34,9 @@ app.UseHttpsRedirection();
 
 // Error handling middleware (must be first)
 app.UseMiddleware<ErrorHandlingMiddleware>();
+
+// Validation middleware for products
+app.UseMiddleware<ValidationMiddleware>();
 
 // Email validation middleware for user endpoints
 app.UseMiddleware<EmailValidationMiddleware>();
