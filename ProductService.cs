@@ -1,5 +1,7 @@
 using MinimalApiApp.Models;
 using MinimalApiApp.Middleware;
+using Polly;
+using Polly.Retry;
 
 namespace MinimalApiApp.Services;
 
@@ -18,48 +20,72 @@ public class InMemoryProductRepository : IProductRepository
 {
     private readonly List<Product> _products = new();
     private int _nextId = 1;
+    private readonly AsyncRetryPolicy _retryPolicy;
 
-    public Task<IEnumerable<Product>> GetAllAsync()
+    public InMemoryProductRepository()
     {
-        return Task.FromResult<IEnumerable<Product>>(_products);
+        _retryPolicy = Policy
+            .Handle<Exception>()
+            .WaitAndRetryAsync(
+                retryCount: 3,
+                sleepDurationProvider: retryAttempt => TimeSpan.FromMilliseconds(100 * Math.Pow(2, retryAttempt))
+            );
     }
 
-    public Task<Product> GetByIdAsync(int id)
+    public async Task<IEnumerable<Product>> GetAllAsync()
     {
-        var product = _products.FirstOrDefault(p => p.Id == id);
-        if (product == null)
-            throw new NotFoundException($"Product with ID {id} not found");
-        return Task.FromResult(product);
+        return await _retryPolicy.ExecuteAsync(() => 
+            Task.FromResult<IEnumerable<Product>>(_products));
     }
 
-    public Task<Product> AddAsync(Product product)
+    public async Task<Product> GetByIdAsync(int id)
     {
-        product.Id = _nextId++;
-        _products.Add(product);
-        return Task.FromResult(product);
+        return await _retryPolicy.ExecuteAsync(() =>
+        {
+            var product = _products.FirstOrDefault(p => p.Id == id);
+            if (product == null)
+                throw new NotFoundException($"Product with ID {id} not found");
+            return Task.FromResult(product);
+        });
     }
 
-    public Task<Product> UpdateAsync(int id, Product product)
+    public async Task<Product> AddAsync(Product product)
     {
-        var existing = _products.FirstOrDefault(p => p.Id == id);
-        if (existing == null)
-            throw new NotFoundException($"Product with ID {id} not found");
-
-        existing.Name = product.Name;
-        existing.Description = product.Description;
-        existing.Price = product.Price;
-        existing.Stock = product.Stock;
-        return Task.FromResult(existing);
+        return await _retryPolicy.ExecuteAsync(() =>
+        {
+            product.Id = _nextId++;
+            _products.Add(product);
+            return Task.FromResult(product);
+        });
     }
 
-    public Task<bool> DeleteAsync(int id)
+    public async Task<Product> UpdateAsync(int id, Product product)
     {
-        var product = _products.FirstOrDefault(p => p.Id == id);
-        if (product == null)
-            throw new NotFoundException($"Product with ID {id} not found");
+        return await _retryPolicy.ExecuteAsync(() =>
+        {
+            var existing = _products.FirstOrDefault(p => p.Id == id);
+            if (existing == null)
+                throw new NotFoundException($"Product with ID {id} not found");
 
-        _products.Remove(product);
-        return Task.FromResult(true);
+            existing.Name = product.Name;
+            existing.Description = product.Description;
+            existing.Price = product.Price;
+            existing.Stock = product.Stock;
+            return Task.FromResult(existing);
+        });
+    }
+
+    public async Task<bool> DeleteAsync(int id)
+    {
+        return await _retryPolicy.ExecuteAsync(() =>
+        {
+            var product = _products.FirstOrDefault(p => p.Id == id);
+            if (product == null)
+                throw new NotFoundException($"Product with ID {id} not found");
+
+            _products.Remove(product);
+            return Task.FromResult(true);
+        });
     }
 }
 

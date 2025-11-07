@@ -1,5 +1,7 @@
 using MinimalApiApp.Models;
 using MinimalApiApp.Middleware;
+using Polly;
+using Polly.Retry;
 
 namespace MinimalApiApp.Services;
 
@@ -7,46 +9,70 @@ public class UserService : IUserService
 {
     private readonly List<User> _users = new();
     private int _nextId = 1;
+    private readonly AsyncRetryPolicy _retryPolicy;
 
-    public Task<IEnumerable<User>> GetAllUsersAsync()
+    public UserService()
     {
-        return Task.FromResult<IEnumerable<User>>(_users);
+        _retryPolicy = Policy
+            .Handle<Exception>()
+            .WaitAndRetryAsync(
+                retryCount: 3,
+                sleepDurationProvider: retryAttempt => TimeSpan.FromMilliseconds(100 * Math.Pow(2, retryAttempt))
+            );
     }
 
-    public Task<User> GetUserByIdAsync(int id)
+    public async Task<IEnumerable<User>> GetAllUsersAsync()
     {
-        var user = _users.FirstOrDefault(u => u.Id == id);
-        if (user == null)
-            throw new NotFoundException($"User with ID {id} not found");
-        return Task.FromResult(user);
+        return await _retryPolicy.ExecuteAsync(() => 
+            Task.FromResult<IEnumerable<User>>(_users));
     }
 
-    public Task<User> CreateUserAsync(User user)
+    public async Task<User> GetUserByIdAsync(int id)
     {
-        user.Id = _nextId++;
-        user.CreatedAt = DateTime.UtcNow;
-        _users.Add(user);
-        return Task.FromResult(user);
+        return await _retryPolicy.ExecuteAsync(() =>
+        {
+            var user = _users.FirstOrDefault(u => u.Id == id);
+            if (user == null)
+                throw new NotFoundException($"User with ID {id} not found");
+            return Task.FromResult(user);
+        });
     }
 
-    public Task<User> UpdateUserAsync(int id, User user)
+    public async Task<User> CreateUserAsync(User user)
     {
-        var existingUser = _users.FirstOrDefault(u => u.Id == id);
-        if (existingUser == null)
-            throw new NotFoundException($"User with ID {id} not found");
-
-        existingUser.Name = user.Name;
-        existingUser.Email = user.Email;
-        return Task.FromResult(existingUser);
+        return await _retryPolicy.ExecuteAsync(() =>
+        {
+            user.Id = _nextId++;
+            user.CreatedAt = DateTime.UtcNow;
+            _users.Add(user);
+            return Task.FromResult(user);
+        });
     }
 
-    public Task<bool> DeleteUserAsync(int id)
+    public async Task<User> UpdateUserAsync(int id, User user)
     {
-        var user = _users.FirstOrDefault(u => u.Id == id);
-        if (user == null)
-            throw new NotFoundException($"User with ID {id} not found");
+        return await _retryPolicy.ExecuteAsync(() =>
+        {
+            var existingUser = _users.FirstOrDefault(u => u.Id == id);
+            if (existingUser == null)
+                throw new NotFoundException($"User with ID {id} not found");
 
-        _users.Remove(user);
-        return Task.FromResult(true);
+            existingUser.Name = user.Name;
+            existingUser.Email = user.Email;
+            return Task.FromResult(existingUser);
+        });
+    }
+
+    public async Task<bool> DeleteUserAsync(int id)
+    {
+        return await _retryPolicy.ExecuteAsync(() =>
+        {
+            var user = _users.FirstOrDefault(u => u.Id == id);
+            if (user == null)
+                throw new NotFoundException($"User with ID {id} not found");
+
+            _users.Remove(user);
+            return Task.FromResult(true);
+        });
     }
 }

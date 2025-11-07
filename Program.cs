@@ -33,6 +33,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Resilience middleware (for retry policies)
+app.UseMiddleware<ResilienceMiddleware>();
+
 // Error handling middleware (must be first)
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
